@@ -102,7 +102,13 @@ RSpec.describe FiberPool::Pool do
         # A separate redis server to not interfere with the default redis server on your machine
         # $redis-server --port 11223 --maxclients 5
 
-        expect { Redis.new(url: 'redis://localhost:11223/0').ping }.not_to raise_error do
+        check_for_redis = lambda do
+          client = Redis.new(url: 'redis://localhost:11223/0')
+          client.ping
+          client.close # The connection should be closed, because the server only allows 5 connections in our config.
+        end
+
+        expect(&check_for_redis).not_to raise_error do
           puts 'Make sure to run redis server with the correct port and max clients: redis-server --port 11223 --maxclients 5'
         end
       end
