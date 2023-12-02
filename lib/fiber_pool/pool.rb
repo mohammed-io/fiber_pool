@@ -53,8 +53,8 @@ module FiberPool
         block.call(session)
       ensure
         checkin(session)
-        process_next
       end.resume
+      process_next
     end
 
     def process_next
