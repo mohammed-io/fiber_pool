@@ -47,7 +47,6 @@ module FiberPool
     end
 
     def process(block)
-      # FOR REVIEW: Is there any benefit of Fiber here?
       fn = proc do
         session = checkout
         block.call(session)
