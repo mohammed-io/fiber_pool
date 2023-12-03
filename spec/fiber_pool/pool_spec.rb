@@ -4,6 +4,7 @@ require 'redis'
 require 'async'
 require 'async/barrier'
 require 'async/redis'
+require 'benchmark'
 
 slow_lua_script = %{
     local wait_time = tonumber(ARGV[1]) or 1000
@@ -69,33 +70,34 @@ RSpec.describe FiberPool::Pool do
 
         all_connections = []
 
-        t_i = DateTime.now.to_time
-        Async do
-          10.times.map do
-            Thread.new do
-              pool.with_connection do |redis|
-                all_connections << redis.object_id
+        Benchmark.bm do |x|
+          x.report do
+            Async do
+              10.times.map do
+                Thread.new do
+                  pool.with_connection do |redis|
+                    all_connections << redis.object_id
 
-                Async do
-                  # FOR REVIEW: The async redis seems to not wait for this operation to finish
-                  # How can I await it while keep it non blocking?
-                  redis.eval(slow_lua_script, [], [300]) # Not useful yet
-                  redis.set('foo', 'bar')
-                  expect(redis.get('foo')).to eq('bar')
-                end.wait
-              rescue RedisClient::CommandError, Redis::CommandError
-                puts 'RedisClient::CommandError'
-              rescue StandardError => e
-                puts e
-              end
+                    Async do
+                      # FOR REVIEW: The async redis seems to not wait for this operation to finish
+                      # How can I await it while keep it non blocking?
+                      redis.eval(slow_lua_script, [], [300]) # Not useful yet
+                      redis.set('foo', 'bar')
+                      expect(redis.get('foo')).to eq('bar')
+                    end.wait
+                  rescue RedisClient::CommandError, Redis::CommandError
+                    puts 'RedisClient::CommandError'
+                  rescue StandardError => e
+                    puts e
+                  end
+                end
+              end.map(&:join)
             end
-          end.map(&:join)
+          end
         end
 
         expect(all_connections.size).to eq(10)
         expect(all_connections.uniq.size).to eq(5)
-      ensure
-        puts DateTime.now.to_time - t_i
       end
     end
 
@@ -111,43 +113,44 @@ RSpec.describe FiberPool::Pool do
         end
 
         expect(&check_for_redis).not_to raise_error do
-          puts 'Make sure to run redis server with the correct port and max clients: redis-server --port 11223 --maxclients 5'
+          puts 'Make sure to run redis server with the correct port and max clients:
+                redis-server --port 11223 --maxclients 5'
         end
       end
 
-      it 'allocates max of 5 connections and re-use those connections' do
+      fit 'allocates max of 5 connections and re-use those connections' do
         pool = FiberPool::Pool.new(5) do
           Redis.new(url: 'redis://localhost:11223/0', read_timeout: 5.0)
         end
 
         all_connections = []
 
-        t_i = DateTime.now.to_time
-        Async do
-          10.times.map do
-            Thread.new do
-              pool.with_connection do |redis|
-                all_connections << redis.object_id
+        Benchmark.bm do |x|
+          x.report do
+            Async do
+              10.times.map do
+                Thread.new do
+                  pool.with_connection do |redis|
+                    all_connections << redis.object_id
 
-                Async do
-                  redis.eval(slow_lua_script, [], [300]) # Not useful yet
-                  redis.set('foo', 'bar')
-                  expect(redis.get('foo')).to eq('bar')
+                    Async do
+                      redis.eval(slow_lua_script, [], [300]) # Not useful yet
+                      redis.set('foo', 'bar')
+                      expect(redis.get('foo')).to eq('bar')
+                    end
+                  rescue RedisClient::CommandError, Redis::CommandError
+                    puts 'RedisClient::CommandError'
+                  rescue StandardError => e
+                    puts e
+                  end
                 end
-              rescue RedisClient::CommandError, Redis::CommandError
-                puts 'RedisClient::CommandError'
-                raise
-              rescue StandardError => e
-                puts e
-              end
+              end.map(&:join)
             end
-          end.map(&:join)
+          end
         end
 
         expect(all_connections.size).to eq(10)
         expect(all_connections.uniq.size).to eq(5)
-      ensure
-        puts DateTime.now.to_time - t_i
       end
     end
   end

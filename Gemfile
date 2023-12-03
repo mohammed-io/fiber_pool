@@ -16,5 +16,5 @@ gem 'rubocop', '~> 1.21'
 gem 'async'
 
 # Redis for testing the connection pools
-gem 'redis'
 gem 'async-redis'
+gem 'redis'
