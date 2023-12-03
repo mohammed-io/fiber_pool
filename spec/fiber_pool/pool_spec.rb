@@ -76,11 +76,13 @@ RSpec.describe FiberPool::Pool do
               pool.with_connection do |redis|
                 all_connections << redis.object_id
 
-                # FOR REVIEW: The async redis seems to not wait for this operation to finish
-                # How can I await it while keep it non blocking?
-                redis.eval(slow_lua_script, [], [300]) # Not useful yet
-                redis.set('foo', 'bar')
-                expect(redis.get('foo')).to eq('bar')
+                Async do
+                  # FOR REVIEW: The async redis seems to not wait for this operation to finish
+                  # How can I await it while keep it non blocking?
+                  redis.eval(slow_lua_script, [], [300]) # Not useful yet
+                  redis.set('foo', 'bar')
+                  expect(redis.get('foo')).to eq('bar')
+                end.wait
               rescue RedisClient::CommandError, Redis::CommandError
                 puts 'RedisClient::CommandError'
               rescue StandardError => e
@@ -127,11 +129,14 @@ RSpec.describe FiberPool::Pool do
               pool.with_connection do |redis|
                 all_connections << redis.object_id
 
-                redis.eval(slow_lua_script, [], [300]) # Not useful yet
-                redis.set('foo', 'bar')
-                expect(redis.get('foo')).to eq('bar')
+                Async do
+                  redis.eval(slow_lua_script, [], [300]) # Not useful yet
+                  redis.set('foo', 'bar')
+                  expect(redis.get('foo')).to eq('bar')
+                end
               rescue RedisClient::CommandError, Redis::CommandError
                 puts 'RedisClient::CommandError'
+                raise
               rescue StandardError => e
                 puts e
               end
