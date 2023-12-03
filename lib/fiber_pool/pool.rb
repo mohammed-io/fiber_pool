@@ -48,13 +48,22 @@ module FiberPool
 
     def process(block)
       # FOR REVIEW: Is there any benefit of Fiber here?
-      Fiber.new do
+      fn = proc do
         session = checkout
         block.call(session)
       ensure
         checkin(session)
-      end.resume
-      process_next
+      end
+
+      if Fiber.scheduler.nil?
+        Fiber.new(&fn).resume
+        process_next
+      else
+        Fiber.schedule do
+          fn.call
+          process_next
+        end
+      end
     end
 
     def process_next
