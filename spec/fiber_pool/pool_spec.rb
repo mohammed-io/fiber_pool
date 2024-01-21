@@ -54,14 +54,6 @@ RSpec.describe FiberPool::Pool do
       expect { pool.checkout }.to raise_error(FiberPool::Pool::EmptyConnectionPoolError)
     end
 
-    it 'queues the block when the pool is empty' do
-      pool = FiberPool::Pool.new(1) { :connection }
-      pool.checkout
-      pool.with_connection do
-        expect(pool.queue.size).to eq(1)
-      end
-    end
-
     context 'with async redis' do
       it 'allocates max of 5 connections and re-use those connections' do
         pool = FiberPool::Pool.new(5) do
@@ -115,43 +107,6 @@ RSpec.describe FiberPool::Pool do
           puts 'Make sure to run redis server with the correct port and max clients:
                 redis-server --port 11223 --maxclients 5'
         end
-      end
-
-      it 'allocates max of 5 connections and re-use those connections' do
-        pool = FiberPool::Pool.new(5) do
-          Redis.new(url: 'redis://localhost:11223/0', read_timeout: 5.0)
-        end
-
-        all_connections = []
-
-        Benchmark.bm do |x|
-          x.report do
-            Async do
-              10.times.map do
-                Thread.new do
-                  Async do
-                    pool.with_connection do |redis|
-                      all_connections << redis.object_id
-
-                      Async do
-                        redis.eval(slow_lua_script, [], [1]) # Not useful yet
-                        redis.set('foo', 'bar')
-                        expect(redis.get('foo')).to eq('bar')
-                      end.wait
-                    rescue RedisClient::CommandError, Redis::CommandError
-                      puts 'RedisClient::CommandError'
-                    rescue StandardError => e
-                      puts e
-                    end
-                  end
-                end
-              end.map(&:join)
-            end
-          end
-        end
-
-        expect(all_connections.size).to eq(10)
-        expect(all_connections.uniq.size).to eq(5)
       end
     end
   end

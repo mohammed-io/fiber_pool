@@ -12,18 +12,26 @@ module FiberPool
     def initialize(size, &session_builder)
       @size = size
       @session_builder = session_builder
-      @sessions = size.times.map { session_builder.call }
+      @sessions = [session_builder.call]
+      @created_sessions = 1
 
+      @semaphore = Async::Semaphore.new(size)
       @mutex = Mutex.new
-      @queue = Queue.new
     end
 
     def with_connection(&block)
-      process_or_enqueue(block)
+      @semaphore.acquire do
+        process(block)
+      end
     end
 
     def checkout
       @mutex.synchronize do
+        if @size > @created_sessions
+          @created_sessions += 1
+          @sessions << @session_builder.call
+        end
+
         raise EmptyConnectionPoolError if @sessions.empty?
 
         @sessions.pop
@@ -38,14 +46,6 @@ module FiberPool
 
     private
 
-    def process_or_enqueue(block)
-      if @sessions.empty?
-        @queue << block
-      else
-        process(block)
-      end
-    end
-
     def process(block)
       fn = proc do
         session = checkout
@@ -54,22 +54,7 @@ module FiberPool
         checkin(session)
       end
 
-      if Fiber.scheduler.nil?
-        Fiber.new(&fn).resume
-        process_next
-      else
-        Fiber.schedule do
-          fn.call
-          process_next
-        end
-      end
-    end
-
-    def process_next
-      return if @queue.empty?
-
-      block = @queue.pop
-      process(block)
+      fn.call
     end
   end
 end
